@@ -9,7 +9,7 @@ RUN apk add --no-cache make gcc musl-dev && \
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.48
 
 # download modules
-COPY go.* .
+COPY go.* ./
 RUN go mod download
 
 # build and test
