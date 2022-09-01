@@ -290,7 +290,7 @@ func refreshTimestamp(bkt *pebbleBucket, writer pebble.Writer) error {
 
 	if !bytes.Equal(bkt.data[:4], arr) {
 		copy(bkt.data[:4], arr)
-		return writer.Set(getPebbleBucketKey(bkt.id), bkt.data, nil)
+		return writer.Set(getPebbleBucketKey(bkt.id), bkt.data, pebble.NoSync)
 	}
 	return nil
 }
