@@ -14,11 +14,11 @@ import (
 var (
 	// ErrBucketNotFound is returned when a bucket is
 	// requested but no bucket is found with the given
-	// bucket id.
+	// BucketId.
 	ErrBucketNotFound = errors.New("store: bucket not found")
 
 	// ErrBucketAlreadyExists is returned when CreateBucket
-	// is called with an already existing bucket id.
+	// is called with an already existing BucketId.
 	ErrBucketAlreadyExists = errors.New("store: bucket already exists")
 
 	// ErrBucketIsFull is returned when appending to a
@@ -135,14 +135,14 @@ func (str *pebbleStore) GetBucket(id BucketID) (Bucket, error) {
 	}
 	bkt.lastIdx = fetchLastIdx(bkt)
 
-	// Use LoadOrStore here to avoid race conditions.
+	// Use LoadOrStore to avoid race conditions.
 	cache, _ := str.cache.LoadOrStore(id, bkt)
 	return cache.(*pebbleBucket), closer.Close()
 }
 
 // CreateBucket creates a new bucket.
 //
-// When a bucket for the given bucket id already exists,
+// When a bucket for the given BucketId already exists,
 // ErrBucketAlreadyExists is returned.
 func (str *pebbleStore) CreateBucket(id BucketID, key BucketKey) (Bucket, error) {
 	if bkt, err := str.GetBucket(id); !errors.Is(err, ErrBucketNotFound) {
@@ -158,7 +158,7 @@ func (str *pebbleStore) CreateBucket(id BucketID, key BucketKey) (Bucket, error)
 		data:  data,
 	}
 
-	// Check again whether bucket does not exist to avoid
+	// Check whether bucket does not exist to avoid
 	// race conditions.
 	if cache, loaded := str.cache.LoadOrStore(id, bkt); loaded {
 		return cache.(*pebbleBucket), ErrBucketAlreadyExists
@@ -250,13 +250,13 @@ const (
 )
 
 // getPebbleBucketKey returns the pebble bucket table key
-// for the given bucket id.
+// for the given BucketId.
 func getPebbleBucketKey(id BucketID) []byte {
 	return append([]byte{bucketTable}, id[:]...)
 }
 
 // getPebbleValueKey returns the pebble value table key for
-// the given bucket id and idx.
+// the given BucketId and idx.
 func getPebbleValueKey(id BucketID, idx uint16) []byte {
 	key := make([]byte, 19)
 	key[0] = valueTable
