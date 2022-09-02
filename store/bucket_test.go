@@ -92,7 +92,7 @@ func TestPutValues(t *testing.T) {
 	// Insert new values.
 	err = bkt.PutValues(TestBktValues)
 	assert.NoError(t, err, "error occurred while putting values")
-	assert.Equal(t, int32(len(ExpectedBktValues)), bkt.(*pebbleBucket).lastIdx.Load(), "lastIdx is not updated correctly")
+	assert.Equal(t, uint16(len(ExpectedBktValues)), bkt.(*pebbleBucket).lastIdx, "lastIdx is not updated correctly")
 
 	// Fetch new values.
 	values, err := bkt.GetValues(BucketRange{Start: 0, End: 500})
@@ -110,7 +110,7 @@ func TestAppendValues(t *testing.T) {
 	// Append new values.
 	err = bkt.AppendValues(TestBktValues)
 	assert.NoError(t, err, "error occurred while appending values")
-	assert.Equal(t, int32(len(ExpectedBktValues)), bkt.(*pebbleBucket).lastIdx.Load(), "lastIdx is not updated correctly")
+	assert.Equal(t, uint16(len(ExpectedBktValues)), bkt.(*pebbleBucket).lastIdx, "lastIdx is not updated correctly")
 
 	// Fetch new values.
 	values, err := bkt.GetValues(BucketRange{Start: 0, End: 500})
@@ -131,7 +131,7 @@ func TestDeleteValues(t *testing.T) {
 
 	err = bkt.DeleteValues(BucketRange{Start: 0, End: 500})
 	assert.NoError(t, err, "error occurred while deleting values")
-	assert.Equal(t, int32(0), bkt.(*pebbleBucket).lastIdx.Load(), "lastIdx is not reset while deleting values")
+	assert.Equal(t, uint16(0), bkt.(*pebbleBucket).lastIdx, "lastIdx is not reset while deleting values")
 
 	// Test whether values are deleted.
 	values, err := bkt.GetValues(BucketRange{Start: 0, End: 500})

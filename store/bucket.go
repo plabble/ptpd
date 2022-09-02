@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/cockroachdb/pebble"
@@ -117,8 +117,9 @@ type pebbleBucket struct {
 	id   BucketID
 	data []byte // First 4 bytes contain the timestamp, other 32 are the key.
 
+	mtx     sync.Mutex   // Mutex guarding the lastIdx field.
+	lastIdx uint16       // Highest index in the value table.
 	store   *pebbleStore // Parent store.
-	lastIdx atomic.Int32 // Highest index in the value table.
 }
 
 // GetBucketID returns the bucket id.
@@ -160,81 +161,21 @@ func (bkt *pebbleBucket) GetValues(rng BucketRange) ([]BucketValue, error) {
 // returned. When a value is empty, the existing
 // bucket value at that idx is freed.
 func (bkt *pebbleBucket) PutValues(values []BucketValue) error {
-	batch := bkt.store.db.NewBatch()
-	key := getPebbleValueKey(bkt.id, 0)
-	for _, val := range values {
-		// Append operation, use lastIdx + 1 as idx.
-		if val.Idx == 0 {
-			if idx := bkt.lastIdx.Add(1); idx <= math.MaxUint16 {
-				val.Idx = uint16(idx)
-			} else {
-				bkt.lastIdx.Add(-1) // Hack to prevent the lastIdx from overflowing.
-				return ErrBucketIsFull
-			}
-		}
-
-		// Write operation to higher idx than lastIdx.
-		if bkt.lastIdx.Load() < int32(val.Idx) {
-			bkt.lastIdx.Store(int32(val.Idx))
-		}
-
-		// Write value to database, free value if empty.
-		binary.BigEndian.PutUint16(key[1+BucketIDLength:], val.Idx)
-		if len(val.Value) > 0 {
-			if err := batch.Set(key, val.Value, nil); err != nil {
-				return err
-			}
-		} else {
-			if err := batch.Delete(key, nil); err != nil {
-				return err
-			}
-		}
-	}
-
-	if err := refreshTimestamp(bkt, batch); err != nil {
+	if err := computeValues(bkt, values, false); err != nil {
 		return err
 	}
-
-	return bkt.store.db.Apply(batch, nil)
+	return insertValues(bkt, values)
 }
 
 // AppendValues adds values to the bucket.
 //
-// The idx of the passed values must be 0 or a valid idx. An
-// idx is valid when it is the last idx + 1.
+// The idx of the given values must be 0 or a valid idx. An
+// idx is valid when it is the last idx+1.
 func (bkt *pebbleBucket) AppendValues(values []BucketValue) error {
-	batch := bkt.store.db.NewBatch()
-	key := getPebbleValueKey(bkt.id, 0)
-	for _, val := range values {
-		if val.Idx != 0 {
-			// When append is called, but the idx is not 0,
-			// verify whether the idx is equal to lastIdx+1.
-			// This is useful when a user only has append
-			// permissions and needs to make sure that its
-			// value is inserted at a specific idx.
-			if !bkt.lastIdx.CompareAndSwap(int32(val.Idx)-1, int32(val.Idx)) {
-				return ErrInvalidAppend
-			}
-		} else {
-			if idx := bkt.lastIdx.Add(1); idx <= math.MaxUint16 {
-				val.Idx = uint16(idx)
-			} else {
-				bkt.lastIdx.Add(-1) // Hack to prevent the lastIdx from overflowing.
-				return ErrBucketIsFull
-			}
-		}
-
-		binary.BigEndian.PutUint16(key[1+BucketIDLength:], val.Idx)
-		if err := batch.Set(key, val.Value, nil); err != nil {
-			return err
-		}
-	}
-
-	if err := refreshTimestamp(bkt, batch); err != nil {
+	if err := computeValues(bkt, values, true); err != nil {
 		return err
 	}
-
-	return bkt.store.db.Apply(batch, nil)
+	return insertValues(bkt, values)
 }
 
 // DeleteValues deletes values from the bucket
@@ -257,13 +198,74 @@ func (bkt *pebbleBucket) DeleteValues(rng BucketRange) error {
 	}
 
 	// Refresh lastIdx when delete removes the last value.
-	// Use compare-and-swap to prevent race condition.
-	lastIdx := bkt.lastIdx.Load()
-	if rng.Start < uint16(lastIdx) && rng.End > uint16(lastIdx) {
-		newIdx := fetchLastIdx(bkt)
-		bkt.lastIdx.CompareAndSwap(lastIdx, int32(newIdx))
+	if rng.Start < bkt.lastIdx && rng.End > bkt.lastIdx {
+		bkt.mtx.Lock()
+		defer bkt.mtx.Unlock()
+		bkt.lastIdx = fetchLastIdx(bkt)
 	}
 	return nil
+}
+
+// computeValues computes and verifies the idx values for
+// the given slice with values.
+func computeValues(bkt *pebbleBucket, values []BucketValue, appendOnly bool) error {
+	bkt.mtx.Lock()
+	defer bkt.mtx.Unlock()
+	for i := range values {
+		switch {
+		// When idx value is 0, this is an append operation.
+		// Increase and assign last idx. Return error when
+		// bucket overflows.
+		case values[i].Idx == 0:
+			if bkt.lastIdx == math.MaxUint16 {
+				return ErrBucketIsFull
+			}
+			bkt.lastIdx++
+			values[i].Idx = bkt.lastIdx
+
+		// For append only operation, verify that the given
+		// idx is equal to lastIdx+1. If not, return
+		// ErrInvalidAppend.
+		case appendOnly:
+			if bkt.lastIdx+1 == values[i].Idx {
+				bkt.lastIdx++
+			} else {
+				return ErrInvalidAppend
+			}
+
+		// When the operation is not append only, and
+		// the value idx is larger than last idx, update
+		// the last idx.
+		case values[i].Idx > bkt.lastIdx:
+			bkt.lastIdx = values[i].Idx
+		}
+	}
+	return nil
+}
+
+// insertValues inserts the given slice of values into the
+// bucket.
+func insertValues(bkt *pebbleBucket, values []BucketValue) error {
+	batch := bkt.store.db.NewBatch()
+	key := getPebbleValueKey(bkt.id, 0)
+	for _, value := range values {
+		binary.BigEndian.PutUint16(key[1+BucketIDLength:], value.Idx)
+		if len(value.Value) > 0 {
+			if err := batch.Set(key, value.Value, nil); err != nil {
+				return err
+			}
+		} else {
+			if err := batch.Delete(key, nil); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := refreshTimestamp(bkt, batch); err != nil {
+		return err
+	}
+
+	return bkt.store.db.Apply(batch, nil)
 }
 
 // fetchLastIdx returns the last idx in the value table for

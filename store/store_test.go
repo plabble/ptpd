@@ -95,7 +95,7 @@ func TestGetBucket(t *testing.T) {
 	assert.NoError(t, err, "error occurred while fetching bucket")
 	assert.Equal(t, TestBktID, bkt.(*pebbleBucket).id, "fetched bucket has incorrect ID")
 	assert.Equal(t, TestBktData, bkt.(*pebbleBucket).data[:], "fetched bucket has incorrect bucket data")
-	assert.Equal(t, int32(len(ExpectedBktValues)), bkt.(*pebbleBucket).lastIdx.Load(), "fetched bucket has incorrect lastIdx")
+	assert.Equal(t, uint16(len(ExpectedBktValues)), bkt.(*pebbleBucket).lastIdx, "fetched bucket has incorrect lastIdx")
 	assert.Same(t, str, bkt.(*pebbleBucket).store, "fetched bucket does not belong to the right store")
 
 	// Test whether the cache is working correctly.
@@ -118,7 +118,7 @@ func TestCreateBucket(t *testing.T) {
 	assert.Equal(t, TestBktID, bkt.GetBucketID(), "created bucket has incorrect ID")
 	assert.Equal(t, getCurrentTimestamp(), getTimestamp(bkt.(*pebbleBucket)), "created bucket has incorrect timestamp")
 	assert.Equal(t, TestBktKey, bkt.GetBucketKey(), "created bucket has incorrect bucket key")
-	assert.Equal(t, int32(0), bkt.(*pebbleBucket).lastIdx.Load(), "created bucket has incorrect lastIdx")
+	assert.Equal(t, uint16(0), bkt.(*pebbleBucket).lastIdx, "created bucket has incorrect lastIdx")
 	assert.Same(t, str, bkt.(*pebbleBucket).store, "created bucket does not belong to the right store")
 
 	// Test whether bucket can be fetched and is cached.
