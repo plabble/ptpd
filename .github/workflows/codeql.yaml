@@ -3,9 +3,6 @@ on:
   push:
     tags:
       - v*
-    branches:
-      - main
-  pull_request:
   schedule:
     - cron: 30 1 * * 0
 jobs:
