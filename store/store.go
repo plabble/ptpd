@@ -149,7 +149,7 @@ func (str *pebbleStore) CreateBucket(id BucketID, key BucketKey) (Bucket, error)
 		return bkt, ErrBucketAlreadyExists
 	}
 
-	data := make([]byte, 4+len(key))
+	data := make([]byte, 4+BucketKeyLength)
 	binary.BigEndian.PutUint32(data[:4], getCurrentTimestamp())
 	copy(data[4:], key[:])
 	bkt := &pebbleBucket{
