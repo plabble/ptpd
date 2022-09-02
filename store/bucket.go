@@ -60,7 +60,7 @@ type BucketKey *[BucketKeyLength]byte
 // Permissions can be requested for public and protected
 // access. Public permissions are accessible by anyone,
 // protected permissions are only accessible by users that
-// know the bucket key. Users that can write can always
+// know the BucketKey. Users that can write can always
 // append to the bucket. Write permission is required for
 // deleting values from the store.
 type BucketPermissions struct {
@@ -78,7 +78,7 @@ func GetBucketLifetime(id BucketID) byte {
 // GetPermissions returns the permissions of a bucket.
 //
 // Authorized identifies whether the bucket is accessed by
-// an user that knows the bucket key.
+// an user that knows the BucketKey.
 func GetBucketPermissions(id BucketID, authorized bool) BucketPermissions {
 	if authorized {
 		return BucketPermissions{
@@ -99,7 +99,7 @@ func GetBucketPermissions(id BucketID, authorized bool) BucketPermissions {
 //
 // The bucket value contains an unique bucket index and a
 // value. The value is stored in the value table with the
-// bucket id + value idx as key.
+// BucketId + value idx as key.
 type BucketValue struct {
 	Idx   uint16 // If value is 0, append to the end of the bucket.
 	Value []byte
@@ -143,7 +143,7 @@ func (bkt *pebbleBucket) GetValues(rng BucketRange) ([]BucketValue, error) {
 	for iter.First(); iter.Valid(); iter.Next() {
 		values = append(values, BucketValue{
 			Idx:   binary.BigEndian.Uint16(iter.Key()[1+BucketIDLength:]),
-			Value: iter.Value(), // TODO(danger): don't we need to copy this?
+			Value: iter.Value(),
 		})
 	}
 
@@ -170,7 +170,7 @@ func (bkt *pebbleBucket) PutValues(values []BucketValue) error {
 // AppendValues adds values to the bucket.
 //
 // The idx of the given values must be 0 or a valid idx. An
-// idx is valid when it is the last idx+1.
+// idx is valid when it is the lastIdx+1.
 func (bkt *pebbleBucket) AppendValues(values []BucketValue) error {
 	if err := computeValues(bkt, values, true); err != nil {
 		return err
@@ -214,7 +214,7 @@ func computeValues(bkt *pebbleBucket, values []BucketValue, appendOnly bool) err
 	for i := range values {
 		switch {
 		// When idx value is 0, this is an append operation.
-		// Increase and assign last idx. Return error when
+		// Increase and assign lastIdx. Return error when
 		// bucket overflows.
 		case values[i].Idx == 0:
 			if bkt.lastIdx == math.MaxUint16 {
@@ -234,8 +234,8 @@ func computeValues(bkt *pebbleBucket, values []BucketValue, appendOnly bool) err
 			}
 
 		// When the operation is not append only, and
-		// the value idx is larger than last idx, update
-		// the last idx.
+		// the value idx is larger than lastIdx, update
+		// the lastIdx.
 		case values[i].Idx > bkt.lastIdx:
 			bkt.lastIdx = values[i].Idx
 		}
@@ -268,7 +268,7 @@ func insertValues(bkt *pebbleBucket, values []BucketValue) error {
 	return bkt.store.db.Apply(batch, nil)
 }
 
-// fetchLastIdx returns the last idx in the value table for
+// fetchLastIdx returns the lastIdx in the value table for
 // a bucket.
 func fetchLastIdx(bkt *pebbleBucket) uint16 {
 	iter := bkt.store.db.NewIter(&pebble.IterOptions{
