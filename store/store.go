@@ -133,7 +133,7 @@ func (str *pebbleStore) GetBucket(id BucketID) (Bucket, error) {
 		data:  data,
 		store: str,
 	}
-	bkt.lastIdx.Store(int32(fetchLastIdx(bkt)))
+	bkt.lastIdx = fetchLastIdx(bkt)
 
 	// Use LoadOrStore here to avoid race conditions.
 	cache, _ := str.cache.LoadOrStore(id, bkt)
