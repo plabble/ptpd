@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/cockroachdb/pebble v0.0.0-20220826184203-b38417b0835b
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
 )
 
 require (
